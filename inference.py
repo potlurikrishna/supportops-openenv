@@ -34,25 +34,30 @@ def smart_policy(obs):
             return Action(action_type="prioritize", content="high")
         return Action(action_type="prioritize", content="medium")
 
-    # 3. ESCALATION
-    if obs.category == "security" and obs.status != "escalated":
-        return Action(action_type="escalate")
+    # 3. ESCALATION (STRICT CHECK)
+    if obs.category == "security":
+        if not getattr(obs, "status", None) == "escalated":
+            return Action(action_type="escalate")
 
-    # 4. TOOL (MUST HAPPEN BEFORE RESOLVE)
+    # 4. TOOL (STRICT CONTROL)
     if obs.tool_result is None:
         if obs.category == "billing":
             return Action(action_type="refund_api")
         if obs.category == "technical":
             return Action(action_type="db_lookup")
 
-    # 5. RESPOND (ONLY EARLY STAGE)
+    # 5. ENSURE TOOL COMPLETION BEFORE RESPOND
+    if obs.tool_result is None:
+        return Action(action_type="db_lookup")
+
+    # 6. RESPOND (AFTER TOOL)
     if len(obs.conversation) < 2:
         return Action(
             action_type="respond",
             content="We are analyzing your issue."
         )
 
-    # 6. FINAL RESOLVE (ONLY AFTER EVERYTHING)
+    # 7. FINAL RESOLVE (ONLY WHEN FULLY READY)
     return Action(action_type="resolve")
 
 def run():
