@@ -1,3 +1,15 @@
+---
+title: supportops-openenv
+emoji: 🤖
+colorFrom: blue
+colorTo: green
+sdk: gradio
+sdk_version: "4.0.0"
+python_version: "3.10"
+app_file: app.py
+pinned: false
+---
+
 # SupportOps OpenEnv
 
 ## Overview
@@ -14,43 +26,7 @@ A real-world customer support simulation environment for training AI agents.
 2. Technical issue (medium)
 3. Security breach (hard)
 
-## Actions
-- classify
-- prioritize
-- respond
-- escalate
-- resolve
-- refund_api
-- db_lookup
-
 ## Run
-
 ```bash
 docker build -t supportops .
 docker run supportops
-
-## Observation Space
-Contains ticket metadata, conversation history, SLA timers, and tool outputs.
-
-## Action Space
-Agents can classify, prioritize, respond, escalate, resolve, and use tools.
-
-## Reward Design
-- Partial rewards for correct classification, priority, escalation
-- Tool usage reward
-- SLA penalty for delays
-- Final reward based on correctness
-
-## Baseline Score
-~0.80 using rule-based policy
-
-
-title: SupportOps OpenEnv
-emoji: 🤖
-colorFrom: blue
-colorTo: green
-sdk: gradio
-sdk_version: "4.0.0"
-python_version: "3.10"
-app_file: app.py
-pinned: false
