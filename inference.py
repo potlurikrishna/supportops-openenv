@@ -35,9 +35,7 @@ def smart_policy(obs):
         return Action(action_type="prioritize", content="medium")
 
     # 3. ESCALATION (FIXED)
-    if obs.category == "security" and not any(
-        "escalated" in m.content.lower() for m in obs.conversation
-    ):
+    if obs.category == "security" and obs.status != "escalated":
         return Action(action_type="escalate")
 
     # 4. TOOL USAGE
