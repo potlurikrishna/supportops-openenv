@@ -10,27 +10,39 @@ def evaluate_step(task, state, action):
         "resolution": 0
     }
 
-    # Category (progress reward)
+    # 1. CATEGORY (core understanding)
     if state["category"] == expected["category"]:
-        score += 0.1
+        score += 0.15
         breakdown["category"] = 1
 
-    # Priority
+    # 2. PRIORITY
     if state["priority"] == expected["priority"]:
-        score += 0.1
+        score += 0.15
         breakdown["priority"] = 1
 
-    # Escalation (strong reward)
-    if expected["escalate"] and state["escalated"]:
-        score += 0.2
-        breakdown["escalation"] = 1
+    # 3. ESCALATION (strong signal)
+    if expected["escalate"]:
+        if state["escalated"]:
+            score += 0.25
+            breakdown["escalation"] = 1
+    else:
+        if not state["escalated"]:
+            score += 0.05
+            breakdown["escalation"] = 1
 
-    # Tool usage (important signal)
-    if state.get("last_tool") == expected.get("tool"):
-        score += 0.2
-        breakdown["tool"] = 1
+    # 4. TOOL USAGE (VERY IMPORTANT)
+    expected_tool = expected.get("tool")
 
-    # Resolution (reward partial + final success)
+    if expected_tool:
+        if state.get("last_tool") == expected_tool:
+            score += 0.25
+            breakdown["tool"] = 1
+    else:
+        if state.get("last_tool") is None:
+            score += 0.05
+            breakdown["tool"] = 1
+
+    # 5. RESOLUTION (final reward, but not dominant)
     if state["resolved"]:
         score += 0.2
         breakdown["resolution"] = 1
