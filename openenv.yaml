@@ -1,0 +1,25 @@
+id: supportops-env
+name: SupportOps Environment
+
+description: >
+  Real-world customer support simulation with SLA constraints,
+  tool usage, and multi-turn conversations.
+
+entry_point: env.environment:SupportOpsEnv
+
+max_steps: 6
+
+reward_range: [0.0, 1.0]
+
+observation_space:
+  type: object
+
+action_space:
+  type: object
+
+tasks:
+  count: 3
+  difficulties:
+    - easy
+    - medium
+    - hard
