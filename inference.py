@@ -13,7 +13,9 @@ from openai import OpenAI
 def smart_policy(obs):
     text = " ".join([m.content for m in obs.conversation]).lower()
 
-    # 1. CLASSIFY
+    # --------------------
+    # 1. CLASSIFY (ONLY IF NEEDED)
+    # --------------------
     if obs.category is None:
         if any(k in text for k in ["charged", "payment", "refund"]):
             return Action(action_type="classify", content="billing")
@@ -26,7 +28,9 @@ def smart_policy(obs):
 
         return Action(action_type="classify", content="billing")
 
+    # --------------------
     # 2. PRIORITY
+    # --------------------
     if obs.priority is None:
         if obs.category == "security":
             return Action(action_type="prioritize", content="urgent")
@@ -34,31 +38,51 @@ def smart_policy(obs):
             return Action(action_type="prioritize", content="high")
         return Action(action_type="prioritize", content="medium")
 
-    # 3. ESCALATION (FIXED)
-    if obs.category == "security" and obs.status != "escalated":
+    # --------------------
+    # 3. ESCALATION (STRICT)
+    # --------------------
+    if obs.category == "security" and not getattr(obs, "status", None) == "escalated":
         return Action(action_type="escalate")
 
-    # 4. TOOL USAGE
+    # --------------------
+    # 4. TOOL USAGE (MUST COME BEFORE RESOLVE)
+    # --------------------
     if obs.category == "billing" and obs.tool_result is None:
         return Action(action_type="refund_api")
 
     if obs.category == "technical" and obs.tool_result is None:
         return Action(action_type="db_lookup")
 
-    # 5. RESPOND
+    # --------------------
+    # 5. RESPOND (LIMITED)
+    # --------------------
     if len(obs.conversation) < 2:
         return Action(
             action_type="respond",
             content="We are working on your issue."
         )
 
-    # 6. SMART SLA RESOLVE
-    if obs.sla_remaining <= 1:
-        if obs.category and obs.priority:
-            return Action(action_type="resolve")
+    # --------------------
+    # 6. FINAL SAFETY CHECK (NO PREMATURE RESOLVE)
+    # --------------------
+    if obs.category == "security" and not getattr(obs, "status", None) == "escalated":
+        return Action(action_type="escalate")
 
-    # 7. FINAL RESOLVE
+    if obs.category == "technical" and obs.tool_result is None:
+        return Action(action_type="db_lookup")
+
+    if obs.category == "billing" and obs.tool_result is None:
+        return Action(action_type="refund_api")
+
+    # --------------------
+    # 7. SMART RESOLVE (ONLY WHEN READY)
+    # --------------------
+    if obs.category and obs.priority:
+        return Action(action_type="resolve")
+
+    # fallback safety
     return Action(action_type="resolve")
+
 
 def run():
     env = SupportOpsEnv(seed=42)
