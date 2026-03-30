@@ -43,3 +43,14 @@ Agents can classify, prioritize, respond, escalate, resolve, and use tools.
 
 ## Baseline Score
 ~0.80 using rule-based policy
+
+
+title: SupportOps OpenEnv
+emoji: 🤖
+colorFrom: blue
+colorTo: green
+sdk: gradio
+sdk_version: "4.0.0"
+python_version: "3.10"
+app_file: app.py
+pinned: false
