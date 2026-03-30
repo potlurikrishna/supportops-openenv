@@ -17,10 +17,13 @@ def smart_policy(obs):
     if obs.category is None:
         if any(k in text for k in ["charged", "payment", "refund"]):
             return Action(action_type="classify", content="billing")
+
         if any(k in text for k in ["crash", "bug", "error"]):
             return Action(action_type="classify", content="technical")
+
         if any(k in text for k in ["unauthorized", "hacked", "fraud"]):
             return Action(action_type="classify", content="security")
+
         return Action(action_type="classify", content="billing")
 
     # 2. PRIORITY
@@ -31,34 +34,25 @@ def smart_policy(obs):
             return Action(action_type="prioritize", content="high")
         return Action(action_type="prioritize", content="medium")
 
-    # 3. ESCALATION (MANDATORY FOR SECURITY)
-    if obs.category == "security" and not getattr(obs, "status", None) == "escalated":
+    # 3. ESCALATION
+    if obs.category == "security" and obs.status != "escalated":
         return Action(action_type="escalate")
 
-    # 4. TOOL (MANDATORY BEFORE RESOLVE)
+    # 4. TOOL (MUST HAPPEN BEFORE RESOLVE)
     if obs.tool_result is None:
         if obs.category == "billing":
             return Action(action_type="refund_api")
         if obs.category == "technical":
             return Action(action_type="db_lookup")
 
-    # 5. CONVERSATION STEP
+    # 5. RESPOND (ONLY EARLY STAGE)
     if len(obs.conversation) < 2:
         return Action(
             action_type="respond",
             content="We are analyzing your issue."
         )
 
-    # 6. FINAL CHECK BEFORE RESOLVE
-    # DO NOT resolve unless all conditions are satisfied
-
-    if obs.category == "security" and not getattr(obs, "status", None) == "escalated":
-        return Action(action_type="escalate")
-
-    if obs.tool_result is None:
-        return Action(action_type="db_lookup" if obs.category == "technical" else "refund_api")
-
-    # 7. ONLY NOW RESOLVE
+    # 6. FINAL RESOLVE (ONLY AFTER EVERYTHING)
     return Action(action_type="resolve")
 
 def run():
