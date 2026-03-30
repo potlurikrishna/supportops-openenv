@@ -1,7 +1,6 @@
 import random
-from env.models import Observation, Action, Reward
+from env.models import Observation, Action, Reward, Message
 from env.tasks import TASKS
-from env.models import Message
 from env.grader import evaluate_step
 from env.utils import refund_api, db_lookup, add_noise
 
@@ -33,12 +32,11 @@ class SupportOpsEnv:
             "tool_result": None,
             "last_tool": None,
             "conversation": [
-                    Message(role="user", content=noisy_input)
-                ]
+                Message(role="user", content=noisy_input)
+            ]
         }
 
         return self._get_obs()
-
 
     def step(self, action: Action):
         if self.done:
@@ -56,7 +54,7 @@ class SupportOpsEnv:
 
         elif action.action_type == "respond":
             self.state_data["conversation"].append(
-            Message(role="agent", content=action.content or "")
+                Message(role="agent", content=action.content or "")
             )
 
         elif action.action_type == "escalate":
@@ -77,20 +75,20 @@ class SupportOpsEnv:
         # Evaluate
         score, breakdown = evaluate_step(self.task, self.state_data, action)
 
-        # ✅ Give FULL reward only when episode ends
-        if self.done:
-            reward_value = score
+        # ✅ FIXED REWARD LOGIC (CRITICAL)
+        if not self.done:
+            reward_value = score * 0.6   # stronger intermediate reward
         else:
-            reward_value = score * 0.2   # small intermediate reward
+            reward_value = score         # full reward at end
 
-        # SLA penalty
+        # SLA penalty (reduced harshness)
         if self.sla_remaining <= 0:
-            reward_value -= 0.2
+            reward_value -= 0.1
 
-        # Force episode end if max steps reached
+        # Force episode end at max steps
         if self.steps >= MAX_STEPS:
             self.done = True
-            reward_value = score  # final evaluation at timeout
+            reward_value = score
 
         # Clamp reward
         reward_value = max(0.0, min(1.0, reward_value))
