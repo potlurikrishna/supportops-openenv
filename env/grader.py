@@ -10,30 +10,41 @@ def evaluate_step(task, state, action):
         "resolution": 0
     }
 
-    # Category (core understanding)
+    # --------------------
+    # CATEGORY (core)
+    # --------------------
     if state["category"] == expected["category"]:
         score += 0.3
         breakdown["category"] = 1
 
-    # Priority (important but less than category)
+    # --------------------
+    # PRIORITY
+    # --------------------
     if state["priority"] == expected["priority"]:
         score += 0.2
         breakdown["priority"] = 1
 
-    # Escalation (critical for hard task)
+    # --------------------
+    # ESCALATION (FIXED)
+    # --------------------
     if expected["escalate"]:
         if state["escalated"]:
             score += 0.3
             breakdown["escalation"] = 1
+        else:
+            score -= 0.2   # ❗ penalty added
     else:
         if not state["escalated"]:
             score += 0.1
             breakdown["escalation"] = 1
 
+    # --------------------
+    # TOOL USAGE
+    # --------------------
     expected_tool = expected.get("tool")
 
     if expected_tool:
-        if state.get("last_tool") == expected_tool:
+        if state.get("last_tool") and state["last_tool"] == expected_tool:
             score += 0.2
             breakdown["tool"] = 1
     else:
@@ -42,10 +53,13 @@ def evaluate_step(task, state, action):
             score += 0.1
             breakdown["tool"] = 1
 
-    # Resolution (only if everything else is correct)
+    # --------------------
+    # RESOLUTION (STRICTER)
+    # --------------------
     if state["resolved"]:
-        if score >= 0.7:  # only reward resolution if agent did well
+        # only reward if agent performed well
+        if score >= 0.8:   # stricter threshold
             score += 0.2
             breakdown["resolution"] = 1
 
-    return min(score, 1.0), breakdown
+    return max(0.0, min(score, 1.0)), breakdown
