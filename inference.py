@@ -1,11 +1,11 @@
 import os
-import gradio as gr
+import json
 from openai import OpenAI
 from env.environment import SupportOpsEnv
 from env.models import Action
 
 # ---------------------------
-# ENV VARIABLES (MUST SET)
+# ENV VARIABLES
 # ---------------------------
 API_BASE_URL = os.getenv("API_BASE_URL")
 API_KEY = os.getenv("HF_TOKEN")
@@ -17,22 +17,23 @@ client = OpenAI(
 )
 
 # ---------------------------
-# LLM AGENT
+# BASELINE POLICY (LLM)
 # ---------------------------
-def llm_policy(obs):
+def smart_policy(obs):
     conversation_text = "\n".join([m.content for m in obs.conversation])
 
     prompt = f"""
 You are a customer support AI agent.
 
-Your job:
-- Classify issue into: billing / technical / security
-- Set priority: low / medium / high / urgent
-- Use tools if needed
-- Escalate ONLY for security
-- Resolve when ready
+Steps:
+1. classify → billing / technical / security
+2. prioritize → low / medium / high / urgent
+3. use tool if needed
+4. escalate only for security
+5. respond if needed
+6. resolve
 
-Current State:
+State:
 Category: {obs.category}
 Priority: {obs.priority}
 Status: {obs.status}
@@ -41,7 +42,7 @@ SLA Remaining: {obs.sla_remaining}
 Conversation:
 {conversation_text}
 
-Available Actions:
+Actions:
 - classify:<category>
 - prioritize:<level>
 - escalate
@@ -50,14 +51,14 @@ Available Actions:
 - respond:<message>
 - resolve
 
-Respond with ONLY ONE action.
+Return ONLY one action.
 """
 
     try:
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
-                {"role": "system", "content": "You are a strict decision-making agent."},
+                {"role": "system", "content": "You are a strict agent."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.2,
@@ -70,18 +71,16 @@ Respond with ONLY ONE action.
         print("LLM Error:", e)
         return Action(action_type="resolve")
 
-    # ---------------------------
-    # PARSE OUTPUT → ACTION
-    # ---------------------------
+    # Parse output
     try:
         if output.startswith("classify"):
-            return Action(action_type="classify", content=output.split(":")[1])
+            return Action(action_type="classify", content=output.split(":")[1].strip())
 
         if output.startswith("prioritize"):
-            return Action(action_type="prioritize", content=output.split(":")[1])
+            return Action(action_type="prioritize", content=output.split(":")[1].strip())
 
         if output.startswith("respond"):
-            return Action(action_type="respond", content=output.split(":", 1)[1])
+            return Action(action_type="respond", content=output.split(":", 1)[1].strip())
 
         if "refund_api" in output:
             return Action(action_type="refund_api")
@@ -98,56 +97,56 @@ Respond with ONLY ONE action.
     except:
         pass
 
-    # fallback
     return Action(action_type="resolve")
 
 
 # ---------------------------
-# RUN SIMULATION
+# RUN BASELINE
 # ---------------------------
-def run_simulation():
+def run():
     env = SupportOpsEnv(seed=42)
-    logs = []
     scores = []
+    report = []
 
     for i in range(3):
         obs = env.reset()
-        logs.append(f"\n===== TASK {i+1} =====")
-
         final_score = 0
+        steps_log = []
 
         for step in range(6):
-            action = llm_policy(obs)
+            action = smart_policy(obs)
             obs, reward, done, _ = env.step(action)
 
-            logs.append(
-                f"Step {step+1} | Action: {action.action_type} | Score: {reward.score:.2f}"
-            )
-
             final_score = reward.score
+
+            steps_log.append({
+                "step": step + 1,
+                "action": action.action_type,
+                "score": reward.score,
+                "breakdown": reward.breakdown
+            })
 
             if done:
                 break
 
-        logs.append(f"Final Task Score: {final_score:.2f}")
         scores.append(final_score)
 
+        report.append({
+            "task_id": obs.ticket_id,
+            "final_score": final_score,
+            "steps": steps_log
+        })
+
+        print(f"Task {i+1} Score: {final_score:.2f}")
+
     avg = sum(scores) / len(scores)
-    logs.append(f"\n🔥 Average Score: {avg:.2f}")
+    print("Baseline Score:", avg)
 
-    return "\n".join(logs)
+    with open("evaluation_report.json", "w") as f:
+        json.dump(report, f, indent=2)
 
+    return avg
 
-# ---------------------------
-# GRADIO UI
-# ---------------------------
-demo = gr.Interface(
-    fn=run_simulation,
-    inputs=[],
-    outputs="text",
-    title="SupportOps OpenEnv (LLM Agent)",
-    description="AI agent solving real-world customer support tickets using tools, escalation, and SLA."
-)
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+    run()
