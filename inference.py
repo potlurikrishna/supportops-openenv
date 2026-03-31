@@ -12,36 +12,40 @@ from openai import OpenAI
 def smart_policy(obs):
     text = " ".join([m.content for m in obs.conversation]).lower()
 
-    # 1. CLASSIFY
+    # -------------------------
+    # 1. CLASSIFY FIRST
+    # -------------------------
     if obs.category is None:
-        if any(k in text for k in ["charged", "payment", "refund"]):
-            return Action(action_type="classify", content="billing")
+        if any(k in text for k in ["unauthorized", "hacked", "fraud"]):
+            return Action(action_type="classify", content="security")
 
         if any(k in text for k in ["crash", "bug", "error"]):
             return Action(action_type="classify", content="technical")
 
-        if any(k in text for k in ["unauthorized", "hacked", "fraud"]):
-            return Action(action_type="classify", content="security")
+        if any(k in text for k in ["charged", "payment", "refund"]):
+            return Action(action_type="classify", content="billing")
 
         return Action(action_type="classify", content="billing")
 
-    # 2. PRIORITY
-    if obs.priority is None:
-        if obs.category == "security":
-            return Action(action_type="prioritize", content="urgent")
-        elif obs.category == "technical":
-            return Action(action_type="prioritize", content="high")
-        else:
-            return Action(action_type="prioritize", content="medium")
-
-    # 🚫 HARD RULE: SECURITY → ONLY ESCALATE → NO TOOL EVER
+    # -------------------------
+    # 🚫 HARD BLOCK: SECURITY (TOP PRIORITY)
+    # -------------------------
     if obs.category == "security":
+        if obs.priority is None:
+            return Action(action_type="prioritize", content="urgent")
+
         if obs.status != "escalated":
             return Action(action_type="escalate")
+
         return Action(action_type="resolve")
 
-    # 🚫 HARD RULE: BILLING → NEVER ESCALATE
+    # -------------------------
+    # 🚫 HARD BLOCK: BILLING (NO ESCALATION EVER)
+    # -------------------------
     if obs.category == "billing":
+        if obs.priority is None:
+            return Action(action_type="prioritize", content="medium")
+
         if obs.tool_result is None:
             return Action(action_type="refund_api")
 
@@ -53,8 +57,13 @@ def smart_policy(obs):
 
         return Action(action_type="resolve")
 
-    # 🚫 HARD RULE: TECHNICAL → ONLY db_lookup
+    # -------------------------
+    # 🚫 HARD BLOCK: TECHNICAL
+    # -------------------------
     if obs.category == "technical":
+        if obs.priority is None:
+            return Action(action_type="prioritize", content="high")
+
         if obs.tool_result is None:
             return Action(action_type="db_lookup")
 
@@ -66,6 +75,7 @@ def smart_policy(obs):
 
         return Action(action_type="resolve")
 
+    # -------------------------
     return Action(action_type="resolve")
 
 def run():
