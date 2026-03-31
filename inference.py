@@ -9,11 +9,12 @@ from openai import OpenAI
 #     api_key=os.getenv("HF_TOKEN")
 # )
 
-
 def smart_policy(obs):
     text = " ".join([m.content for m in obs.conversation]).lower()
 
+    # -------------------------
     # 1. CLASSIFY
+    # -------------------------
     if obs.category is None:
         if any(k in text for k in ["charged", "payment", "refund"]):
             return Action(action_type="classify", content="billing")
@@ -26,38 +27,61 @@ def smart_policy(obs):
 
         return Action(action_type="classify", content="billing")
 
+    # -------------------------
     # 2. PRIORITY
+    # -------------------------
     if obs.priority is None:
         if obs.category == "security":
             return Action(action_type="prioritize", content="urgent")
-        if obs.category == "technical":
+        elif obs.category == "technical":
             return Action(action_type="prioritize", content="high")
-        return Action(action_type="prioritize", content="medium")
+        else:
+            return Action(action_type="prioritize", content="medium")
 
-    # 3. ESCALATION (STRICT CHECK)
+    # -------------------------
+    # 3. SECURITY FLOW (STRICT)
+    # -------------------------
     if obs.category == "security":
-        if not getattr(obs, "status", None) == "escalated":
+        if obs.status != "escalated":
             return Action(action_type="escalate")
 
-    # 4. TOOL (STRICT CONTROL)
-    if obs.tool_result is None:
-        if obs.category == "billing":
+        # After escalation → directly resolve
+        return Action(action_type="resolve")
+
+    # -------------------------
+    # 4. BILLING FLOW
+    # -------------------------
+    if obs.category == "billing":
+        if obs.tool_result is None:
             return Action(action_type="refund_api")
-        if obs.category == "technical":
+
+        # After tool → respond once
+        if len(obs.conversation) < 2:
+            return Action(
+                action_type="respond",
+                content="Your refund has been processed."
+            )
+
+        return Action(action_type="resolve")
+
+    # -------------------------
+    # 5. TECHNICAL FLOW
+    # -------------------------
+    if obs.category == "technical":
+        if obs.tool_result is None:
             return Action(action_type="db_lookup")
 
-    # 5. ENSURE TOOL COMPLETION BEFORE RESPOND
-    if obs.tool_result is None:
-        return Action(action_type="db_lookup")
+        if len(obs.conversation) < 2:
+            return Action(
+                action_type="respond",
+                content="We identified the issue and are fixing it."
+            )
 
-    # 6. RESPOND (AFTER TOOL)
-    if len(obs.conversation) < 2:
-        return Action(
-            action_type="respond",
-            content="We are analyzing your issue."
-        )
+        return Action(action_type="resolve")
 
-    # 7. FINAL RESOLVE (ONLY WHEN FULLY READY)
+    # -------------------------
+    # FALLBACK
+    # -------------------------
     return Action(action_type="resolve")
 
 def run():
