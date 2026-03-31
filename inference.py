@@ -15,24 +15,21 @@ MODEL_NAME = os.getenv("MODEL_NAME")
 # -------------------------
 # 🧠 STRICT RULE ENGINE (PRIMARY)
 # -------------------------
+
 def smart_policy(obs):
     text = " ".join([m.content for m in obs.conversation]).lower()
 
-    # -------------------------
     # STEP 1: CLASSIFY
-    # -------------------------
     if obs.category is None:
-        if any(k in text for k in ["unauthorized", "fraud", "hacked"]):
+        if "unauthorized" in text or "fraud" in text or "hacked" in text:
             return Action(action_type="classify", content="security")
 
-        if any(k in text for k in ["charged", "payment", "refund"]):
+        if "charged" in text or "payment" in text or "refund" in text:
             return Action(action_type="classify", content="billing")
 
         return Action(action_type="classify", content="technical")
 
-    # -------------------------
-    # STEP 2: PRIORITIZE
-    # -------------------------
+    # STEP 2: PRIORITY
     if obs.priority is None:
         if obs.category == "security":
             return Action(action_type="prioritize", content="urgent")
@@ -42,15 +39,11 @@ def smart_policy(obs):
 
         return Action(action_type="prioritize", content="medium")
 
-    # -------------------------
-    # STEP 3: ESCALATE (ONLY SECURITY)
-    # -------------------------
+    # STEP 3: ESCALATE
     if obs.category == "security" and obs.status != "escalated":
         return Action(action_type="escalate")
 
-    # -------------------------
-    # STEP 4: TOOL (ONLY ONCE)
-    # -------------------------
+    # STEP 4: TOOL
     if obs.tool_result is None:
         if obs.category == "billing":
             return Action(action_type="refund_api")
@@ -58,20 +51,15 @@ def smart_policy(obs):
         if obs.category == "technical":
             return Action(action_type="db_lookup")
 
-    # -------------------------
-    # STEP 5: RESPOND (ONLY ONCE)
-    # -------------------------
+    # STEP 5: RESPOND
     if len(obs.conversation) < 2:
         return Action(
             action_type="respond",
-            content="We are working on your issue."
+            content="We are resolving your issue."
         )
 
-    # -------------------------
     # STEP 6: RESOLVE
-    # -------------------------
     return Action(action_type="resolve")
-
 # -------------------------
 # 🤖 OPTIONAL LLM (SAFE USE)
 # -------------------------
