@@ -16,16 +16,24 @@ def smart_policy(obs):
     # 1. CLASSIFY FIRST
     # -------------------------
     if obs.category is None:
-        if any(k in text for k in ["unauthorized", "hacked", "fraud"]):
-            return Action(action_type="classify", content="security")
+        text_clean = text.lower()
 
-        if any(k in text for k in ["crash", "bug", "error"]):
-            return Action(action_type="classify", content="technical")
+    # normalize noise
+    text_clean = text_clean.replace("hola", "").replace("नमस्ते", "")
 
-        if any(k in text for k in ["charged", "payment", "refund"]):
-            return Action(action_type="classify", content="billing")
+    # SECURITY FIRST (most critical)
+    if any(k in text_clean for k in ["unauthorized", "hacked", "fraud"]):
+        return Action(action_type="classify", content="security")
 
+    # BILLING SECOND
+    if any(k in text_clean for k in ["charged", "payment", "refund"]):
         return Action(action_type="classify", content="billing")
+
+    # TECH LAST
+    if any(k in text_clean for k in ["crash", "bug", "error"]):
+        return Action(action_type="classify", content="technical")
+
+    return Action(action_type="classify", content="billing")
 
     # -------------------------
     # 🚫 HARD BLOCK: SECURITY (TOP PRIORITY)
