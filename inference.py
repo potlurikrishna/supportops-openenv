@@ -13,30 +13,30 @@ def smart_policy(obs):
     text = " ".join([m.content for m in obs.conversation]).lower()
 
     # -------------------------
-    # 1. CLASSIFY FIRST
+    # 1. CLASSIFY (FIXED)
     # -------------------------
     if obs.category is None:
         text_clean = text.lower()
 
-    # normalize noise
-    text_clean = text_clean.replace("hola", "").replace("नमस्ते", "")
+        # normalize noise
+        text_clean = text_clean.replace("hola", "").replace("नमस्ते", "")
 
-    # SECURITY FIRST (most critical)
-    if any(k in text_clean for k in ["unauthorized", "hacked", "fraud"]):
-        return Action(action_type="classify", content="security")
+        # SECURITY FIRST
+        if any(k in text_clean for k in ["unauthorized", "hacked", "fraud"]):
+            return Action(action_type="classify", content="security")
 
-    # BILLING SECOND
-    if any(k in text_clean for k in ["charged", "payment", "refund"]):
+        # BILLING
+        if any(k in text_clean for k in ["charged", "payment", "refund"]):
+            return Action(action_type="classify", content="billing")
+
+        # TECH
+        if any(k in text_clean for k in ["crash", "bug", "error"]):
+            return Action(action_type="classify", content="technical")
+
         return Action(action_type="classify", content="billing")
 
-    # TECH LAST
-    if any(k in text_clean for k in ["crash", "bug", "error"]):
-        return Action(action_type="classify", content="technical")
-
-    return Action(action_type="classify", content="billing")
-
     # -------------------------
-    # 🚫 HARD BLOCK: SECURITY (TOP PRIORITY)
+    # 🚫 SECURITY FLOW
     # -------------------------
     if obs.category == "security":
         if obs.priority is None:
@@ -48,7 +48,7 @@ def smart_policy(obs):
         return Action(action_type="resolve")
 
     # -------------------------
-    # 🚫 HARD BLOCK: BILLING (NO ESCALATION EVER)
+    # 🚫 BILLING FLOW
     # -------------------------
     if obs.category == "billing":
         if obs.priority is None:
@@ -66,7 +66,7 @@ def smart_policy(obs):
         return Action(action_type="resolve")
 
     # -------------------------
-    # 🚫 HARD BLOCK: TECHNICAL
+    # 🚫 TECHNICAL FLOW
     # -------------------------
     if obs.category == "technical":
         if obs.priority is None:
@@ -85,7 +85,6 @@ def smart_policy(obs):
 
     # -------------------------
     return Action(action_type="resolve")
-
 def run():
     env = SupportOpsEnv(seed=42)
     scores = []
