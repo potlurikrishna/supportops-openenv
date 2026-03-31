@@ -13,18 +13,17 @@ MODEL_NAME = os.getenv("MODEL_NAME")
 
 
 # -------------------------
-# 🧠 STRICT RULE ENGINE (PRIMARY)
+# ✅ STRICT RULE POLICY (GROUND TRUTH)
 # -------------------------
-
-def smart_policy(obs):
+def strict_policy(obs):
     text = " ".join([m.content for m in obs.conversation]).lower()
 
     # STEP 1: CLASSIFY
     if obs.category is None:
-        if "unauthorized" in text or "fraud" in text or "hacked" in text:
+        if any(k in text for k in ["unauthorized", "fraud", "hacked"]):
             return Action(action_type="classify", content="security")
 
-        if "charged" in text or "payment" in text or "refund" in text:
+        if any(k in text for k in ["charged", "payment", "refund"]):
             return Action(action_type="classify", content="billing")
 
         return Action(action_type="classify", content="technical")
@@ -33,13 +32,11 @@ def smart_policy(obs):
     if obs.priority is None:
         if obs.category == "security":
             return Action(action_type="prioritize", content="urgent")
-
         if obs.category == "technical":
             return Action(action_type="prioritize", content="high")
-
         return Action(action_type="prioritize", content="medium")
 
-    # STEP 3: ESCALATE
+    # STEP 3: ESCALATE (ONLY SECURITY)
     if obs.category == "security" and obs.status != "escalated":
         return Action(action_type="escalate")
 
@@ -47,7 +44,6 @@ def smart_policy(obs):
     if obs.tool_result is None:
         if obs.category == "billing":
             return Action(action_type="refund_api")
-
         if obs.category == "technical":
             return Action(action_type="db_lookup")
 
@@ -60,8 +56,10 @@ def smart_policy(obs):
 
     # STEP 6: RESOLVE
     return Action(action_type="resolve")
+
+
 # -------------------------
-# 🤖 OPTIONAL LLM (SAFE USE)
+# 🤖 LLM (SAFE + CONTROLLED)
 # -------------------------
 def llm_suggestion(obs):
     try:
@@ -99,18 +97,15 @@ Return ONLY JSON:
 # 🚀 FINAL POLICY (SAFE HYBRID)
 # -------------------------
 def smart_policy(obs):
-    # ALWAYS get correct action first
-    correct_action = strict_policy(obs)
+    rule_action = strict_policy(obs)
 
-    # Try LLM (optional improvement)
     llm_action = llm_suggestion(obs)
 
-    # If LLM gives SAME valid action → use it
-    if llm_action and llm_action.action_type == correct_action.action_type:
+    # ✅ Only trust LLM if it agrees
+    if llm_action and llm_action.action_type == rule_action.action_type:
         return llm_action
 
-    # Otherwise → ALWAYS fallback to correct logic
-    return correct_action
+    return rule_action
 
 
 # -------------------------
