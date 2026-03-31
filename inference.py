@@ -12,9 +12,7 @@ from openai import OpenAI
 def smart_policy(obs):
     text = " ".join([m.content for m in obs.conversation]).lower()
 
-    # -------------------------
     # 1. CLASSIFY
-    # -------------------------
     if obs.category is None:
         if any(k in text for k in ["charged", "payment", "refund"]):
             return Action(action_type="classify", content="billing")
@@ -27,9 +25,7 @@ def smart_policy(obs):
 
         return Action(action_type="classify", content="billing")
 
-    # -------------------------
     # 2. PRIORITY
-    # -------------------------
     if obs.priority is None:
         if obs.category == "security":
             return Action(action_type="prioritize", content="urgent")
@@ -38,24 +34,17 @@ def smart_policy(obs):
         else:
             return Action(action_type="prioritize", content="medium")
 
-    # -------------------------
-    # 3. SECURITY FLOW (STRICT)
-    # -------------------------
+    # 🚫 HARD RULE: SECURITY → ONLY ESCALATE → NO TOOL EVER
     if obs.category == "security":
         if obs.status != "escalated":
             return Action(action_type="escalate")
-
-        # After escalation → directly resolve
         return Action(action_type="resolve")
 
-    # -------------------------
-    # 4. BILLING FLOW
-    # -------------------------
+    # 🚫 HARD RULE: BILLING → NEVER ESCALATE
     if obs.category == "billing":
         if obs.tool_result is None:
             return Action(action_type="refund_api")
 
-        # After tool → respond once
         if len(obs.conversation) < 2:
             return Action(
                 action_type="respond",
@@ -64,9 +53,7 @@ def smart_policy(obs):
 
         return Action(action_type="resolve")
 
-    # -------------------------
-    # 5. TECHNICAL FLOW
-    # -------------------------
+    # 🚫 HARD RULE: TECHNICAL → ONLY db_lookup
     if obs.category == "technical":
         if obs.tool_result is None:
             return Action(action_type="db_lookup")
@@ -79,9 +66,6 @@ def smart_policy(obs):
 
         return Action(action_type="resolve")
 
-    # -------------------------
-    # FALLBACK
-    # -------------------------
     return Action(action_type="resolve")
 
 def run():
