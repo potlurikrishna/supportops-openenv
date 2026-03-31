@@ -1,135 +1,153 @@
 import os
-import json
+import gradio as gr
+from openai import OpenAI
 from env.environment import SupportOpsEnv
 from env.models import Action
-from openai import OpenAI
 
-# client = OpenAI(
-#     base_url=os.getenv("API_BASE_URL"),
-#     api_key=os.getenv("HF_TOKEN")
-# )
+# ---------------------------
+# ENV VARIABLES (MUST SET)
+# ---------------------------
+API_BASE_URL = os.getenv("API_BASE_URL")
+API_KEY = os.getenv("HF_TOKEN")
+MODEL_NAME = os.getenv("MODEL_NAME")
 
-def smart_policy(obs):
-    text = " ".join([m.content for m in obs.conversation]).lower()
+client = OpenAI(
+    base_url=API_BASE_URL,
+    api_key=API_KEY
+)
 
-    # -------------------------
-    # 1. CLASSIFY (FIXED)
-    # -------------------------
-    if obs.category is None:
-        text_clean = text.lower()
+# ---------------------------
+# LLM AGENT
+# ---------------------------
+def llm_policy(obs):
+    conversation_text = "\n".join([m.content for m in obs.conversation])
 
-        # normalize noise
-        text_clean = text_clean.replace("hola", "").replace("नमस्ते", "")
+    prompt = f"""
+You are a customer support AI agent.
 
-        # SECURITY FIRST
-        if any(k in text_clean for k in ["unauthorized", "hacked", "fraud"]):
-            return Action(action_type="classify", content="security")
+Your job:
+- Classify issue into: billing / technical / security
+- Set priority: low / medium / high / urgent
+- Use tools if needed
+- Escalate ONLY for security
+- Resolve when ready
 
-        # BILLING
-        if any(k in text_clean for k in ["charged", "payment", "refund"]):
-            return Action(action_type="classify", content="billing")
+Current State:
+Category: {obs.category}
+Priority: {obs.priority}
+Status: {obs.status}
+SLA Remaining: {obs.sla_remaining}
 
-        # TECH
-        if any(k in text_clean for k in ["crash", "bug", "error"]):
-            return Action(action_type="classify", content="technical")
+Conversation:
+{conversation_text}
 
-        return Action(action_type="classify", content="billing")
+Available Actions:
+- classify:<category>
+- prioritize:<level>
+- escalate
+- refund_api
+- db_lookup
+- respond:<message>
+- resolve
 
-    # -------------------------
-    # 🚫 SECURITY FLOW
-    # -------------------------
-    if obs.category == "security":
-        if obs.priority is None:
-            return Action(action_type="prioritize", content="urgent")
+Respond with ONLY ONE action.
+"""
 
-        if obs.status != "escalated":
-            return Action(action_type="escalate")
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {"role": "system", "content": "You are a strict decision-making agent."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2,
+            max_tokens=50
+        )
 
+        output = response.choices[0].message.content.strip().lower()
+
+    except Exception as e:
+        print("LLM Error:", e)
         return Action(action_type="resolve")
 
-    # -------------------------
-    # 🚫 BILLING FLOW
-    # -------------------------
-    if obs.category == "billing":
-        if obs.priority is None:
-            return Action(action_type="prioritize", content="medium")
+    # ---------------------------
+    # PARSE OUTPUT → ACTION
+    # ---------------------------
+    try:
+        if output.startswith("classify"):
+            return Action(action_type="classify", content=output.split(":")[1])
 
-        if obs.tool_result is None:
+        if output.startswith("prioritize"):
+            return Action(action_type="prioritize", content=output.split(":")[1])
+
+        if output.startswith("respond"):
+            return Action(action_type="respond", content=output.split(":", 1)[1])
+
+        if "refund_api" in output:
             return Action(action_type="refund_api")
 
-        if len(obs.conversation) < 2:
-            return Action(
-                action_type="respond",
-                content="Your refund has been processed."
-            )
-
-        return Action(action_type="resolve")
-
-    # -------------------------
-    # 🚫 TECHNICAL FLOW
-    # -------------------------
-    if obs.category == "technical":
-        if obs.priority is None:
-            return Action(action_type="prioritize", content="high")
-
-        if obs.tool_result is None:
+        if "db_lookup" in output:
             return Action(action_type="db_lookup")
 
-        if len(obs.conversation) < 2:
-            return Action(
-                action_type="respond",
-                content="We identified the issue and are fixing it."
-            )
+        if "escalate" in output:
+            return Action(action_type="escalate")
 
-        return Action(action_type="resolve")
+        if "resolve" in output:
+            return Action(action_type="resolve")
 
-    # -------------------------
+    except:
+        pass
+
+    # fallback
     return Action(action_type="resolve")
-def run():
+
+
+# ---------------------------
+# RUN SIMULATION
+# ---------------------------
+def run_simulation():
     env = SupportOpsEnv(seed=42)
+    logs = []
     scores = []
-    report = []
 
     for i in range(3):
         obs = env.reset()
+        logs.append(f"\n===== TASK {i+1} =====")
+
         final_score = 0
-        steps_log = []
 
         for step in range(6):
-            action = smart_policy(obs)
+            action = llm_policy(obs)
             obs, reward, done, _ = env.step(action)
 
-            final_score = reward.score
+            logs.append(
+                f"Step {step+1} | Action: {action.action_type} | Score: {reward.score:.2f}"
+            )
 
-            steps_log.append({
-                "step": step + 1,
-                "action": action.action_type,
-                "score": reward.score,
-                "breakdown": reward.breakdown
-            })
+            final_score = reward.score
 
             if done:
                 break
 
+        logs.append(f"Final Task Score: {final_score:.2f}")
         scores.append(final_score)
 
-        report.append({
-            "task_id": obs.ticket_id,
-            "final_score": final_score,
-            "steps": steps_log
-        })
-
-        print(f"Task {i+1} Score: {final_score:.2f}")
-
     avg = sum(scores) / len(scores)
-    print("Baseline Score:", avg)
+    logs.append(f"\n🔥 Average Score: {avg:.2f}")
 
-    # Save report
-    with open("evaluation_report.json", "w") as f:
-        json.dump(report, f, indent=2)
+    return "\n".join(logs)
 
-    return avg
 
+# ---------------------------
+# GRADIO UI
+# ---------------------------
+demo = gr.Interface(
+    fn=run_simulation,
+    inputs=[],
+    outputs="text",
+    title="SupportOps OpenEnv (LLM Agent)",
+    description="AI agent solving real-world customer support tickets using tools, escalation, and SLA."
+)
 
 if __name__ == "__main__":
-    run()
+    demo.launch(server_name="0.0.0.0", server_port=7860)
