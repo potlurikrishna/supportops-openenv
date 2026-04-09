@@ -47,25 +47,28 @@ def strict_policy(obs):
         if obs.category == "technical":
             return Action(action_type="db_lookup")
 
-    # STEP 5: RESPOND
-    if len(obs.conversation) < 2:
+    # STEP 5: RESPOND (only after tool or escalation)
+    if obs.tool_result is not None or obs.status == "escalated":
         return Action(
             action_type="respond",
-            content="We are resolving your issue."
+            content="Your issue has been processed. We are working on it."
         )
 
-    # STEP 6: RESOLVE
-    return Action(action_type="resolve")
+    # STEP 6: RESOLVE (only when ready)
+    if obs.tool_result is not None or obs.status == "escalated":
+        return Action(action_type="resolve")
 
 
 # -------------------------
 # 🤖 LLM (SAFE + CONTROLLED)
 # -------------------------
 def llm_suggestion(obs):
+    if not USE_LLM:
+        return None
+
     try:
         prompt = f"""
 You are a support agent.
-
 State:
 category={obs.category}
 priority={obs.priority}
@@ -78,11 +81,33 @@ Return ONLY JSON:
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.1
+            temperature=0.1,
+            timeout=3  # ✅ prevent hanging
         )
 
         output = response.choices[0].message.content.strip()
-        data = json.loads(output)
+
+        # SAFE PARSING
+        try:
+            start = output.find("{")
+            end = output.rfind("}") + 1
+            json_str = output[start:end]
+            data = json.loads(json_str)
+        except Exception:
+            return None
+
+        VALID_ACTIONS = {
+            "classify",
+            "prioritize",
+            "escalate",
+            "refund_api",
+            "db_lookup",
+            "respond",
+            "resolve"
+        }
+
+        if data.get("action") not in VALID_ACTIONS:
+            return None
 
         return Action(
             action_type=data["action"],
@@ -92,18 +117,19 @@ Return ONLY JSON:
     except Exception:
         return None
 
-
 # -------------------------
 # 🚀 FINAL POLICY (SAFE HYBRID)
 # -------------------------
 def smart_policy(obs):
     rule_action = strict_policy(obs)
 
-    llm_action = llm_suggestion(obs)
-
-    # ✅ Only trust LLM if it agrees
-    if llm_action and llm_action.action_type == rule_action.action_type:
-        return llm_action
+    # ✅ Try LLM but NEVER depend on it
+    try:
+        llm_action = llm_suggestion(obs)
+        if llm_action and llm_action.action_type == rule_action.action_type:
+            return llm_action
+    except Exception:
+        pass
 
     return rule_action
 
@@ -112,34 +138,46 @@ def smart_policy(obs):
 # 🧪 RUN
 # -------------------------
 def run():
-    env = SupportOpsEnv(seed=42)
-    scores = []
+    try:
+        env = SupportOpsEnv(seed=42)
+        scores = []
 
-    for i in range(3):
-        obs = env.reset()
-        final_score = 0
+        for i in range(3):
+            obs = env.reset()
+            final_score = 0
+            steps = 0
+            task_name = f"task_{i+1}"
 
-        print(f"\n===== TASK {i+1} =====")
+            print(f"[START] task={task_name}", flush=True)
 
-        for step in range(6):
-            action = smart_policy(obs)
-            obs, reward, done, _ = env.step(action)
+            for step in range(6):
+                try:
+                    action = smart_policy(obs)
+                    obs, reward, done, _ = env.step(action)
 
-            print(f"Step {step+1} | Action: {action.action_type} | Score: {reward.score:.2f}")
+                    steps += 1
+                    final_score = reward.score
 
-            final_score = reward.score
+                    print(f"[STEP] step={steps} reward={final_score:.4f}", flush=True)
 
-            if done:
-                break
+                    if done:
+                        break
 
-        print(f"Final Task Score: {final_score:.2f}")
-        scores.append(final_score)
+                except Exception:
+                    break
 
-    avg = sum(scores) / len(scores)
-    print(f"\n🔥 Average Score: {avg:.2f}")
+            scores.append(final_score)
 
-    return avg
+            print(f"[END] task={task_name} score={final_score:.4f} steps={steps}", flush=True)
 
+        return sum(scores) / len(scores)
+
+    except Exception:
+        # FAIL SAFE → still print something
+        print("[START] task=error", flush=True)
+        print("[STEP] step=1 reward=0.0", flush=True)
+        print("[END] task=error score=0.0 steps=1", flush=True)
+        return 0.0
 
 if __name__ == "__main__":
     run()
