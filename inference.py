@@ -7,10 +7,18 @@ from env.models import Action
 # ✅ STRICT RULE POLICY
 # -------------------------
 def strict_policy(obs):
-    text = " ".join([m.content for m in obs.conversation]).lower()
+    try:
+        text = " ".join([getattr(m, "content", "") for m in (obs.conversation or [])]).lower()
+    except Exception:
+        text = ""
+
+    category = getattr(obs, "category", None)
+    priority = getattr(obs, "priority", None)
+    status = getattr(obs, "status", None)
+    tool_result = getattr(obs, "tool_result", None)
 
     # STEP 1: CLASSIFY
-    if obs.category is None:
+    if category is None:
         if any(k in text for k in ["unauthorized", "fraud", "hacked"]):
             return Action(action_type="classify", content="security")
 
@@ -20,26 +28,26 @@ def strict_policy(obs):
         return Action(action_type="classify", content="technical")
 
     # STEP 2: PRIORITY
-    if obs.priority is None:
-        if obs.category == "security":
+    if priority is None:
+        if category == "security":
             return Action(action_type="prioritize", content="urgent")
-        if obs.category == "technical":
+        if category == "technical":
             return Action(action_type="prioritize", content="high")
         return Action(action_type="prioritize", content="medium")
 
     # STEP 3: ESCALATE
-    if obs.category == "security" and obs.status != "escalated":
+    if category == "security" and status != "escalated":
         return Action(action_type="escalate")
 
     # STEP 4: TOOL
-    if obs.tool_result is None:
-        if obs.category == "billing":
+    if tool_result is None:
+        if category == "billing":
             return Action(action_type="refund_api")
-        if obs.category == "technical":
+        if category == "technical":
             return Action(action_type="db_lookup")
 
     # STEP 5: RESPOND
-    if obs.tool_result is not None or obs.status == "escalated":
+    if tool_result is not None or status == "escalated":
         return Action(
             action_type="respond",
             content="Your issue has been processed. We are working on it."
@@ -47,7 +55,6 @@ def strict_policy(obs):
 
     # STEP 6: RESOLVE
     return Action(action_type="resolve")
-
 
 # -------------------------
 # 🚀 RUN (FULLY SAFE)
